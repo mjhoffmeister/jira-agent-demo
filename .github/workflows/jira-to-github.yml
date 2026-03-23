@@ -1,0 +1,83 @@
+# Option B — Jira-to-GitHub Sync via Polling
+#
+# Fallback workflow for when the first-party "Copilot coding agent for Jira"
+# integration is unavailable (e.g., no Jira Standard/Rovo access).
+#
+# Polls Jira every 5 minutes for issues with label "agent-ready" in status
+# "To Do". Creates a GitHub Issue and assigns the Copilot coding agent.
+#
+# Required secrets:
+#   JIRA_BASE_URL   — e.g. https://your-site.atlassian.net
+#   JIRA_USER_EMAIL — Jira account email
+#   JIRA_API_TOKEN  — Jira API token (Account Settings > Security > API tokens)
+
+name: "Jira → GitHub Sync"
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # Allow manual trigger for demos
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Fetch agent-ready Jira issues
+        id: jira
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          # JQL: project = DEMO, status = "To Do", label = agent-ready,
+          # not already synced (no "gh-synced" label).
+          JQL='project = DEMO AND status = "To Do" AND labels = agent-ready AND labels != gh-synced'
+          ENCODED_JQL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$JQL'))")
+
+          RESPONSE=$(curl -s -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Accept: application/json" \
+            "${JIRA_BASE_URL}/rest/api/3/search?jql=${ENCODED_JQL}&fields=summary,description,key")
+
+          echo "issues=$(echo "$RESPONSE" | jq -c '.issues // []')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Issues and assign Copilot
+        if: steps.jira.outputs.issues != '[]'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          echo '${{ steps.jira.outputs.issues }}' | jq -c '.[]' | while read -r issue; do
+            KEY=$(echo "$issue" | jq -r '.key')
+            SUMMARY=$(echo "$issue" | jq -r '.fields.summary')
+            # Render Jira ADF description to plain text (basic fallback)
+            DESC=$(echo "$issue" | jq -r '.fields.description.content[]?.content[]?.text // empty' | head -50)
+
+            BODY="**Jira Issue:** [${KEY}](${JIRA_BASE_URL}/browse/${KEY})
+
+          ${DESC}
+
+          ---
+          _Synced from Jira. Do not edit the Jira key above._"
+
+            # Create GitHub Issue
+            GH_ISSUE_URL=$(gh issue create \
+              --title "[${KEY}] ${SUMMARY}" \
+              --body "${BODY}" \
+              --label "jira-sync" \
+              --assignee "copilot-swe-agent[bot]" 2>&1 || true)
+
+            echo "Created: ${GH_ISSUE_URL}"
+
+            # Mark Jira issue as synced by adding label
+            curl -s -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -X PUT \
+              "${JIRA_BASE_URL}/rest/api/3/issue/${KEY}" \
+              -d '{"update":{"labels":[{"add":"gh-synced"}]}}'
+          done

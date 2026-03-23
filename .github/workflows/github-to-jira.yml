@@ -1,0 +1,90 @@
+# Option B — GitHub-to-Jira Sync (Outbound)
+#
+# When a Copilot coding agent PR is opened or merged, update the linked
+# Jira issue: transition status and post a comment with PR details.
+#
+# Required secrets:
+#   JIRA_BASE_URL   — e.g. https://your-site.atlassian.net
+#   JIRA_USER_EMAIL — Jira account email
+#   JIRA_API_TOKEN  — Jira API token
+
+name: "GitHub → Jira Sync"
+
+on:
+  pull_request:
+    types: [opened, closed]
+
+jobs:
+  sync-to-jira:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.body, 'Jira Issue:') || contains(github.event.pull_request.title, 'DEMO-')
+
+    steps:
+      - name: Extract Jira key from PR
+        id: extract
+        run: |
+          # Try PR title first (e.g. "[DEMO-42] Fix pagination")
+          KEY=$(echo "${{ github.event.pull_request.title }}" | grep -oP 'DEMO-\d+' | head -1)
+
+          # Fall back to PR body
+          if [ -z "$KEY" ]; then
+            KEY=$(echo "${{ github.event.pull_request.body }}" | grep -oP 'DEMO-\d+' | head -1)
+          fi
+
+          if [ -z "$KEY" ]; then
+            echo "No Jira key found — skipping."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "key=${KEY}" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update Jira on PR opened
+        if: steps.extract.outputs.found == 'true' && github.event.action == 'opened'
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          KEY="${{ steps.extract.outputs.key }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+
+          # Post comment to Jira
+          curl -s -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${KEY}/comment" \
+            -d "{\"body\":{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"🤖 Copilot coding agent opened a PR: \"},{\"type\":\"text\",\"text\":\"${PR_TITLE}\",\"marks\":[{\"type\":\"link\",\"attrs\":{\"href\":\"${PR_URL}\"}}]}]}]}}"
+
+          # Transition to "In Progress" (transition ID 21 is typical — adjust per project)
+          curl -s -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${KEY}/transitions" \
+            -d '{"transition":{"id":"21"}}'
+
+      - name: Update Jira on PR merged
+        if: steps.extract.outputs.found == 'true' && github.event.pull_request.merged == true
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          KEY="${{ steps.extract.outputs.key }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+
+          # Post merge comment
+          curl -s -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${KEY}/comment" \
+            -d "{\"body\":{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"✅ PR merged. Commit: ${MERGE_SHA:0:7} — \"},{\"type\":\"text\",\"text\":\"View PR\",\"marks\":[{\"type\":\"link\",\"attrs\":{\"href\":\"${PR_URL}\"}}]}]}]}}"
+
+          # Transition to "Done" (transition ID 31 is typical — adjust per project)
+          curl -s -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${KEY}/transitions" \
+            -d '{"transition":{"id":"31"}}'
