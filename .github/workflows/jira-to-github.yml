@@ -51,6 +51,13 @@ jobs:
           echo "Errors: $(echo "$RESPONSE" | jq '.errorMessages // empty')"
           echo "issues=$(echo "$RESPONSE" | jq -c '.issues // []')" >> "$GITHUB_OUTPUT"
 
+      - name: Ensure jira-sync label exists
+        if: steps.jira.outputs.issues != '[]'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "jira-sync" --description "Synced from Jira" --color "1d76db" 2>/dev/null || true
+
       - name: Create GitHub Issues and assign Copilot
         if: steps.jira.outputs.issues != '[]'
         env:
