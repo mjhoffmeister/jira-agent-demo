@@ -10,11 +10,10 @@ public class TaskService
 
     public TaskItem Create(CreateTaskRequest request)
     {
-        // BUG: No validation — null/empty titles are accepted.
         var task = new TaskItem
         {
             Id = _nextId++,
-            Title = request.Title ?? string.Empty,
+            Title = request.Title,
             Description = request.Description ?? string.Empty,
             Status = "todo",
             CreatedAt = DateTime.UtcNow

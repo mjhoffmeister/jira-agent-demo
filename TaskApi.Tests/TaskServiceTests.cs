@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using TaskApi.Models;
 using TaskApi.Services;
 
@@ -5,6 +6,14 @@ namespace TaskApi.Tests;
 
 public class TaskServiceTests
 {
+    // Helper to run data-annotation validation on a model instance.
+    private static IList<ValidationResult> Validate(object model)
+    {
+        var results = new List<ValidationResult>();
+        Validator.TryValidateObject(model, new ValidationContext(model), results, validateAllProperties: true);
+        return results;
+    }
+
     [Fact]
     public void Create_ReturnsTaskWithId()
     {
@@ -66,5 +75,29 @@ public class TaskServiceTests
 
         Assert.Single(page2.Items);
         Assert.Equal("T3", page2.Items[0].Title);
+    }
+
+    [Fact]
+    public void CreateTaskRequest_EmptyTitle_FailsValidation()
+    {
+        var request = new CreateTaskRequest { Title = "" };
+        var results = Validate(request);
+        Assert.NotEmpty(results);
+    }
+
+    [Fact]
+    public void CreateTaskRequest_WhitespaceTitle_FailsValidation()
+    {
+        var request = new CreateTaskRequest { Title = "   " };
+        var results = Validate(request);
+        Assert.NotEmpty(results);
+    }
+
+    [Fact]
+    public void CreateTaskRequest_ValidTitle_PassesValidation()
+    {
+        var request = new CreateTaskRequest { Title = "My Task" };
+        var results = Validate(request);
+        Assert.Empty(results);
     }
 }

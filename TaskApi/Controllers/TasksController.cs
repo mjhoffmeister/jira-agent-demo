@@ -28,7 +28,6 @@ public class TasksController(TaskService taskService) : ControllerBase
     [HttpPost]
     public ActionResult<TaskItem> Create([FromBody] CreateTaskRequest request)
     {
-        // BUG: No validation — falls straight through to service.
         var task = taskService.Create(request);
         return CreatedAtAction(nameof(GetById), new { id = task.Id }, task);
     }
