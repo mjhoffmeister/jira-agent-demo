@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using TaskApi.Models;
 using TaskApi.Services;
+using TaskStatus = TaskApi.Models.TaskStatus;
 
 namespace TaskApi.Controllers;
 
@@ -33,7 +34,7 @@ public class TasksController(TaskService taskService) : ControllerBase
     }
 
     [HttpPatch("{id:int}/status")]
-    public ActionResult<TaskItem> UpdateStatus(int id, [FromBody] string newStatus)
+    public ActionResult<TaskItem> UpdateStatus(int id, [FromBody] TaskStatus newStatus)
     {
         var task = taskService.UpdateStatus(id, newStatus);
         if (task is null) return NotFound();

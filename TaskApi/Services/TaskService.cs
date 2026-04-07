@@ -1,4 +1,5 @@
 using TaskApi.Models;
+using TaskStatus = TaskApi.Models.TaskStatus;
 
 namespace TaskApi.Services;
 
@@ -15,7 +16,7 @@ public class TaskService
             Id = _nextId++,
             Title = request.Title,
             Description = request.Description ?? string.Empty,
-            Status = "todo",
+            Status = TaskStatus.Todo,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -55,19 +56,17 @@ public class TaskService
         };
     }
 
-    public TaskItem? UpdateStatus(int id, string newStatus)
+    public TaskItem? UpdateStatus(int id, TaskStatus newStatus)
     {
         var task = GetById(id);
         if (task is null) return null;
 
-        // BUG: No validation that newStatus is a known value.
-        // Any string is accepted — "doen", "in progrss", "banana".
         task.Status = newStatus;
 
-        if (newStatus == "done")
-        {
+        if (newStatus == TaskStatus.Done)
             task.CompletedAt = DateTime.UtcNow;
-        }
+        else
+            task.CompletedAt = null;
 
         return task;
     }
