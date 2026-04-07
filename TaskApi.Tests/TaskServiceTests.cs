@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using TaskApi.Models;
 using TaskApi.Services;
+using TaskStatus = TaskApi.Models.TaskStatus;
 
 namespace TaskApi.Tests;
 
@@ -22,7 +23,7 @@ public class TaskServiceTests
 
         Assert.NotEqual(0, task.Id);
         Assert.Equal("Test", task.Title);
-        Assert.Equal("todo", task.Status);
+        Assert.Equal(TaskStatus.Todo, task.Status);
     }
 
     [Fact]
@@ -100,4 +101,66 @@ public class TaskServiceTests
         var results = Validate(request);
         Assert.Empty(results);
     }
+
+    [Fact]
+    public void Create_DefaultStatus_IsTodo()
+    {
+        var service = new TaskService();
+        var task = service.Create(new CreateTaskRequest { Title = "T1" });
+
+        Assert.Equal(TaskStatus.Todo, task.Status);
+    }
+
+    [Theory]
+    [InlineData(TaskStatus.Todo)]
+    [InlineData(TaskStatus.InProgress)]
+    [InlineData(TaskStatus.Done)]
+    public void UpdateStatus_SetsExpectedStatus(TaskStatus newStatus)
+    {
+        var service = new TaskService();
+        var task = service.Create(new CreateTaskRequest { Title = "T1" });
+
+        var updated = service.UpdateStatus(task.Id, newStatus);
+
+        Assert.NotNull(updated);
+        Assert.Equal(newStatus, updated.Status);
+    }
+
+    [Fact]
+    public void UpdateStatus_Done_SetsCompletedAt()
+    {
+        var service = new TaskService();
+        var task = service.Create(new CreateTaskRequest { Title = "T1" });
+
+        var updated = service.UpdateStatus(task.Id, TaskStatus.Done);
+
+        Assert.NotNull(updated);
+        Assert.NotNull(updated.CompletedAt);
+    }
+
+    [Fact]
+    public void UpdateStatus_NonDone_DoesNotSetCompletedAt()
+    {
+        var service = new TaskService();
+        var task = service.Create(new CreateTaskRequest { Title = "T1" });
+
+        var updated = service.UpdateStatus(task.Id, TaskStatus.InProgress);
+
+        Assert.NotNull(updated);
+        Assert.Null(updated.CompletedAt);
+    }
+
+    [Fact]
+    public void UpdateStatus_RevertFromDone_ClearsCompletedAt()
+    {
+        var service = new TaskService();
+        var task = service.Create(new CreateTaskRequest { Title = "T1" });
+        service.UpdateStatus(task.Id, TaskStatus.Done);
+
+        var updated = service.UpdateStatus(task.Id, TaskStatus.InProgress);
+
+        Assert.NotNull(updated);
+        Assert.Null(updated.CompletedAt);
+    }
 }
+
